@@ -40,26 +40,16 @@ streams:
     retriever:
       type: SimpleRetriever
       paginator:
-        type: DefaultPaginator
-        page_size_option:
-          type: RequestOption
-          field_name: limit
-          inject_into: request_parameter
-        page_token_option:
-          type: RequestOption
-          field_name: offset
-          inject_into: request_parameter
-        pagination_strategy:
-          type: OffsetIncrement
-          page_size: 100
-          inject_on_first_request: false
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
       requester:
         type: HttpRequester
         url: >-
-          https://api.sellsy.com/v2/invoices?embed[]=acl&embed[]=owner&embed[]=related&embed[]=fiscal_year&embed[]=currency&embed[]=smart_tags&embed[]=deposits&embed[]=invoicing_address&embed[]=delivery_address&embed[]=issuer_address&embed[]=payment_method_ids
-        http_method: GET
+          https://api.sellsy.com/v2/invoices/search?embed[]=acl&embed[]=owner&embed[]=related&embed[]=fiscal_year&embed[]=currency&embed[]=smart_tags&embed[]=deposits&embed[]=invoicing_address&embed[]=delivery_address&embed[]=issuer_address&embed[]=payment_method_ids
+        http_method: POST
         authenticator:
           $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_body_json:
+          filters: {}
       record_selector:
         type: RecordSelector
         extractor:
@@ -1749,6 +1739,640 @@ streams:
               - invoice_id
             value: "{{ stream_partition['invoice_id'] }}"
             value_type: integer
+  - type: DeclarativeStream
+    name: credit_notes
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      requester:
+        type: HttpRequester
+        url: >-
+          https://api.sellsy.com/v2/credit-notes/search?embed[]=acl&embed[]=owner&embed[]=related&embed[]=fiscal_year&embed[]=currency&embed[]=smart_tags&embed[]=invoicing_address&embed[]=delivery_address&embed[]=issuer_address
+        http_method: POST
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_body_json:
+          filters: {}
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: deliveries
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      requester:
+        type: HttpRequester
+        url: >-
+          https://api.sellsy.com/v2/deliveries/search?embed[]=acl&embed[]=owner&embed[]=related&embed[]=fiscal_year&embed[]=currency&embed[]=smart_tags&embed[]=invoicing_address&embed[]=delivery_address&embed[]=issuer_address&embed[]=settings&embed[]=assigned_staff
+        http_method: POST
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_body_json:
+          filters: {}
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: orders
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      requester:
+        type: HttpRequester
+        url: >-
+          https://api.sellsy.com/v2/orders/search?embed[]=acl&embed[]=owner&embed[]=related&embed[]=fiscal_year&embed[]=currency&embed[]=smart_tags&embed[]=payment_terms&embed[]=invoicing_address&embed[]=delivery_address&embed[]=issuer_address&embed[]=settings&embed[]=assigned_staff&embed[]=payment_method_ids
+        http_method: POST
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_body_json:
+          filters: {}
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: invoice_details
+    retriever:
+      type: SimpleRetriever
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/0"
+            parent_key: id
+            partition_field: invoice_id
+      requester:
+        type: HttpRequester
+        url: "https://api.sellsy.com/v2/invoices/{{ stream_partition['invoice_id'] }}?embed[]=invoicing_address"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: credit_note_details
+    retriever:
+      type: SimpleRetriever
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/5"
+            parent_key: id
+            partition_field: credit_note_id
+      requester:
+        type: HttpRequester
+        url: "https://api.sellsy.com/v2/credit-notes/{{ stream_partition['credit_note_id'] }}?embed[]=invoicing_address"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: delivery_details
+    retriever:
+      type: SimpleRetriever
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/6"
+            parent_key: id
+            partition_field: delivery_id
+      requester:
+        type: HttpRequester
+        url: "https://api.sellsy.com/v2/deliveries/{{ stream_partition['delivery_id'] }}?embed[]=invoicing_address"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: order_details
+    retriever:
+      type: SimpleRetriever
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/7"
+            parent_key: id
+            partition_field: order_id
+      requester:
+        type: HttpRequester
+        url: "https://api.sellsy.com/v2/orders/{{ stream_partition['order_id'] }}?embed[]=invoicing_address"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: credit_note_custom_fields
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/5"
+            parent_key: id
+            partition_field: credit_note_id
+      requester:
+        type: HttpRequester
+        url: "https://api.sellsy.com/v2/credit-notes/{{ stream_partition['credit_note_id'] }}/custom-fields"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - credit_note_id
+            value: "{{ stream_partition['credit_note_id'] }}"
+            value_type: integer
+    primary_key:
+      - credit_note_id
+      - id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - credit_note_id
+          - id
+        properties:
+          credit_note_id:
+            type: number
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: order_custom_fields
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/7"
+            parent_key: id
+            partition_field: order_id
+      requester:
+        type: HttpRequester
+        url: "https://api.sellsy.com/v2/orders/{{ stream_partition['order_id'] }}/custom-fields"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - order_id
+            value: "{{ stream_partition['order_id'] }}"
+            value_type: integer
+    primary_key:
+      - order_id
+      - id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - order_id
+          - id
+        properties:
+          order_id:
+            type: number
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: invoice_payments
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/0"
+            parent_key: id
+            partition_field: invoice_id
+      requester:
+        type: HttpRequester
+        url: "https://api.sellsy.com/v2/invoices/{{ stream_partition['invoice_id'] }}/payments"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - invoice_id
+            value: "{{ stream_partition['invoice_id'] }}"
+            value_type: integer
+    primary_key:
+      - invoice_id
+      - id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - invoice_id
+          - id
+        properties:
+          invoice_id:
+            type: number
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: company_smart_tags
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/1"
+            parent_key: id
+            partition_field: company_id
+      requester:
+        type: HttpRequester
+        url: "https://api.sellsy.com/v2/companies/{{ stream_partition['company_id'] }}/smart-tags"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - company_id
+            value: "{{ stream_partition['company_id'] }}"
+            value_type: integer
+    primary_key:
+      - company_id
+      - id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - company_id
+          - id
+        properties:
+          company_id:
+            type: number
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: company_custom_fields
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/1"
+            parent_key: id
+            partition_field: company_id
+      requester:
+        type: HttpRequester
+        url: "https://api.sellsy.com/v2/companies/{{ stream_partition['company_id'] }}/custom-fields"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - company_id
+            value: "{{ stream_partition['company_id'] }}"
+            value_type: integer
+    primary_key:
+      - company_id
+      - id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - company_id
+          - id
+        properties:
+          company_id:
+            type: number
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: individual_smart_tags
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/2"
+            parent_key: id
+            partition_field: individual_id
+      requester:
+        type: HttpRequester
+        url: "https://api.sellsy.com/v2/individuals/{{ stream_partition['individual_id'] }}/smart-tags"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - individual_id
+            value: "{{ stream_partition['individual_id'] }}"
+            value_type: integer
+    primary_key:
+      - individual_id
+      - id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - individual_id
+          - id
+        properties:
+          individual_id:
+            type: number
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: individual_custom_fields
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/2"
+            parent_key: id
+            partition_field: individual_id
+      requester:
+        type: HttpRequester
+        url: "https://api.sellsy.com/v2/individuals/{{ stream_partition['individual_id'] }}/custom-fields"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - individual_id
+            value: "{{ stream_partition['individual_id'] }}"
+            value_type: integer
+    primary_key:
+      - individual_id
+      - id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - individual_id
+          - id
+        properties:
+          individual_id:
+            type: number
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: custom_fields_definitions
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      requester:
+        type: HttpRequester
+        url: https://api.sellsy.com/v2/custom-fields
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: number
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: rate_categories
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      requester:
+        type: HttpRequester
+        url: https://api.sellsy.com/v2/rate-categories
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: number
+        additionalProperties: true
 
 spec:
   type: Spec
