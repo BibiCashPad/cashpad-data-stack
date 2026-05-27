@@ -2373,6 +2373,326 @@ streams:
           id:
             type: number
         additionalProperties: true
+  # ──────────────────────────────────────────────────────────────────────
+  # API v1 shim — endpoints non disponibles en v2
+  # POST https://apifeed.sellsy.com/0/ avec body form-encoded contenant
+  # un JSON dans le champ `do_in`. Auth = même token v2 (scope api-v1).
+  # ──────────────────────────────────────────────────────────────────────
+  - type: DeclarativeStream
+    name: catalogue_categories
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - response
+      requester:
+        type: HttpRequester
+        url: https://apifeed.sellsy.com/0/
+        http_method: POST
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_headers:
+          Content-Type: application/x-www-form-urlencoded
+        request_body_data:
+          request: "1"
+          io_mode: "json"
+          do_in: '{"method":"Catalogue.getCategories","params":{"type":"item"}}'
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: string
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: catalogue_items
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        type: DefaultPaginator
+        pagination_strategy:
+          type: PageIncrement
+          start_from_page: 1
+          page_size: 100
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - response
+            - result
+            - "*"
+      requester:
+        type: HttpRequester
+        url: https://apifeed.sellsy.com/0/
+        http_method: POST
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_headers:
+          Content-Type: application/x-www-form-urlencoded
+        request_body_data:
+          request: "1"
+          io_mode: "json"
+          do_in: '{"method":"Catalogue.getList","params":{"type":"item","pagination":{"nbperpage":100,"pagenum":{{ next_page_token if next_page_token else 1 }}}}}'
+    primary_key:
+      - id
+      - declid
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: string
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: delivery_parents
+    retriever:
+      type: SimpleRetriever
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/6"
+            parent_key: id
+            partition_field: delivery_id
+      requester:
+        type: HttpRequester
+        url: https://apifeed.sellsy.com/0/
+        http_method: POST
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_headers:
+          Content-Type: application/x-www-form-urlencoded
+        request_body_data:
+          request: "1"
+          io_mode: "json"
+          do_in: '{"method":"Document.getOne","params":{"doctype":"delivery","docid":{{ stream_partition["delivery_id"] }}}}'
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - response
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - delivery_id
+            value: "{{ stream_partition['delivery_id'] }}"
+            value_type: integer
+    primary_key: delivery_id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - delivery_id
+        properties:
+          delivery_id:
+            type: number
+          parentIdent:
+            type:
+              - string
+              - "null"
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: order_parents
+    retriever:
+      type: SimpleRetriever
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/7"
+            parent_key: id
+            partition_field: order_id
+      requester:
+        type: HttpRequester
+        url: https://apifeed.sellsy.com/0/
+        http_method: POST
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_headers:
+          Content-Type: application/x-www-form-urlencoded
+        request_body_data:
+          request: "1"
+          io_mode: "json"
+          do_in: '{"method":"Document.getOne","params":{"doctype":"order","docid":{{ stream_partition["order_id"] }}}}'
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - response
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - order_id
+            value: "{{ stream_partition['order_id'] }}"
+            value_type: integer
+    primary_key: order_id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - order_id
+        properties:
+          order_id:
+            type: number
+          parentIdent:
+            type:
+              - string
+              - "null"
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: invoice_model_parents
+    retriever:
+      type: SimpleRetriever
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - stream: "#/streams/0"
+            parent_key: parent.id
+            partition_field: model_id
+      requester:
+        type: HttpRequester
+        url: https://apifeed.sellsy.com/0/
+        http_method: POST
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_headers:
+          Content-Type: application/x-www-form-urlencoded
+        request_body_data:
+          request: "1"
+          io_mode: "json"
+          do_in: '{"method":"Document.getOne","params":{"doctype":"model","docid":{{ stream_partition["model_id"] }}}}'
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - response
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - model_id
+            value: "{{ stream_partition['model_id'] }}"
+            value_type: integer
+    primary_key: model_id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - model_id
+        properties:
+          model_id:
+            type: number
+          ident:
+            type:
+              - string
+              - "null"
+          parentIdent:
+            type:
+              - string
+              - "null"
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: catalogue_services
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        type: DefaultPaginator
+        pagination_strategy:
+          type: PageIncrement
+          start_from_page: 1
+          page_size: 100
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - response
+            - result
+            - "*"
+      requester:
+        type: HttpRequester
+        url: https://apifeed.sellsy.com/0/
+        http_method: POST
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_headers:
+          Content-Type: application/x-www-form-urlencoded
+        request_body_data:
+          request: "1"
+          io_mode: "json"
+          do_in: '{"method":"Catalogue.getList","params":{"type":"service","pagination":{"nbperpage":100,"pagenum":{{ next_page_token if next_page_token else 1 }}}}}'
+    primary_key:
+      - id
+      - declid
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: string
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: estimates
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      requester:
+        type: HttpRequester
+        url: >-
+          https://api.sellsy.com/v2/estimates/search?embed[]=acl&embed[]=currency&embed[]=smart_tags&embed[]=fiscal_year&embed[]=payment_terms&embed[]=invoicing_address&embed[]=delivery_address&embed[]=issuer_address&embed[]=payment_method_ids&embed[]=settings
+        http_method: POST
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_body_json:
+          filters: {}
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: number
+        additionalProperties: true
 
 spec:
   type: Spec

@@ -1,7 +1,7 @@
 # Cashpad data stack — plan projet
 
 > Document de référence : où on en est, ce qu'on a décidé, ce qui reste à faire.
-> Mis à jour : 2026-05-26.
+> Mis à jour : 2026-05-27.
 
 ## Objectif
 
@@ -37,111 +37,104 @@ Install dev : [`INSTALL.md`](INSTALL.md)
 - Accessible sur http://localhost:8000
 - **Connexion à Postgres** : depuis le cluster kind, via `host.docker.internal:5432` (le Postgres du compose Docker)
 
-### 3. Connecteur Sellsy V2 custom (Connector Builder)
-Construit en YAML dans le Builder Airbyte.
+### 3. Connecteur Sellsy — **28 streams** (Sprints 1 → 5d)
+
+YAML versionné dans Git ([`airbyte/sellsy_v2.yaml`](airbyte/sellsy_v2.yaml)). Plan détaillé : [`docs/sellsy_connector_plan.md`](docs/sellsy_connector_plan.md).
 
 **Auth** : OAuth 2.0 `client_credentials` (token endpoint `https://login.sellsy.com/oauth2/access-tokens`)
 
-**5 streams** :
-| Stream | Endpoint | Embeds / particularités |
-|---|---|---|
-| `invoices` | `GET /v2/invoices` | acl, owner, related, fiscal_year, currency, smart_tags, deposits, invoicing/delivery/issuer addresses, payment_method_ids |
-| `companies` | `GET /v2/companies` | main_contact, invoicing_address, smart_tags |
-| `individuals` | `GET /v2/individuals` | — |
-| `contacts` | `GET /v2/contacts` | — |
-| `invoice_custom_fields` | `GET /v2/invoices/{id}/custom-fields` | **Child stream** de `invoices` (SubstreamPartitionRouter). Injecte `invoice_id` via `AddFields`. PK composite `[invoice_id, id]` |
+#### Sprint 1 — Top-level POST /search
+`invoices`, `credit_notes`, `deliveries`, `orders` — tous en `POST /v2/<doctype>/search` avec body `{"filters": {}}`. Migration depuis GET listing.
 
-**Pagination** : `CursorPagination` (lit `pagination.offset` de la réponse, géré nativement par Sellsy en seek mode — pas de limite 100k)
+#### Sprint 2 — Détails par doc (child streams)
+`invoice_details`, `credit_note_details`, `delivery_details`, `order_details` — `GET /v2/<doctype>/{id}` avec `embed[]=invoicing_address`. Apportent `rows` (lignes) et montants détaillés.
 
-**Rate limiting** : `HTTPAPIBudget` actif sur `X-Quota-Remaining-By-Minute`, policies `148/min` et `23/s` (valeurs lues sur les headers Sellsy au premier appel)
+#### Sprint 3 — Custom fields, paiements, tiers enrichis (7 child streams)
+`invoice_custom_fields`, `credit_note_custom_fields`, `order_custom_fields`, `invoice_payments`, `company_smart_tags`, `company_custom_fields`, `individual_smart_tags`, `individual_custom_fields`. Pattern PK composite `[parent_id, id]`, injection de la FK via `AddFields`.
 
-### 4. Doc
-- `architecture-data-stack.md` (vision technique)
-- `INSTALL.md` (guide pas-à-pas dev env)
-- `README.md` (TL;DR + URLs)
-- `docs/SELLSY_API.md` + `docs/sellsy.v2.latest.yaml` (référence API Sellsy)
+#### Sprint 4 — Référentiels
+`custom_fields_definitions`, `rate_categories` (méta-données pour les jointures dbt).
+
+#### Sprint 5a — API v1 shim catalogue (3 streams)
+`catalogue_categories`, `catalogue_items`, `catalogue_services` via `POST apifeed.sellsy.com/0/`. Pattern nouveau : body form-encoded contenant un JSON-as-string (`do_in=`), pagination `PageIncrement` avec interpolation Jinja du `pagenum` dans le body.
+
+#### Sprint 5b — API v1 résolution parents (3 streams)
+`delivery_parents`, `order_parents`, `invoice_model_parents` via `Document.getOne(doctype, id)`. Pour `invoice_model_parents`, on appelle pour TOUS les invoices : Sellsy renvoie `status: error, response: null` pour les non-models → le `record_selector` skip ces réponses (0 record émis). Coût acceptable au volume actuel.
+
+#### Sprint 5d — Devis
+`estimates` en `POST /v2/estimates/search` (couvre les 10-32% d'invoices avec `parent.type=estimate` sur l'historique).
+
+**Transverse pour tous les streams :**
+- Pagination : `CursorPagination` (v2) ou `PageIncrement` (v1)
+- Rate limit : `HTTPAPIBudget` actif sur `X-Quota-Remaining-By-Minute` (148/min + 23/s)
+- `definitions.linked` pour factoriser auth + paginator
+
+### 4. Outillage CLI (`make airbyte-push`)
+
+Script Python `scripts/airbyte_push.py` (uv + PEP 723 inline deps) qui synchronise `airbyte/sellsy_v2.yaml` → Builder Project Airbyte via l'API REST.
+
+État actuel : **update du draft seulement**. Le publish auto (création de version) échoue côté Airbyte avec un NPE dans `DeclarativeSourceManifestInjector` — workaround = cliquer "Publish" manuellement dans l'UI après chaque `make airbyte-push`. À investiguer plus tard.
+
+Plan détaillé : [`docs/airbyte_sync_plan.md`](docs/airbyte_sync_plan.md)
+
+### 5. Documentation
+- [`architecture-data-stack.md`](architecture-data-stack.md) — vision technique
+- [`INSTALL.md`](INSTALL.md) — guide pas-à-pas dev env
+- [`README.md`](README.md) — TL;DR + URLs
+- [`docs/SELLSY_API.md`](docs/SELLSY_API.md) + [`docs/sellsy.v2.latest.yaml`](docs/sellsy.v2.latest.yaml) — référence API Sellsy
+- [`docs/sellsy_endpoints.md`](docs/sellsy_endpoints.md) — inventaire des endpoints à consommer
+- [`docs/sellsy_connector_plan.md`](docs/sellsy_connector_plan.md) — plan détaillé du connecteur
+- [`docs/airbyte_sync_plan.md`](docs/airbyte_sync_plan.md) — design du script CLI
+
+### 6. Git
+Repo `BibiCashPad/cashpad-data-stack` sur GitHub. Commits par bloc cohérent. Branche `main`.
 
 ---
 
 ## 🔄 En cours
 
-- Publier v0.4.0 du connecteur Sellsy → upgrade source → refresh schema dans la connection
-- 1ère sync complète des 4 streams "simples" (invoices, companies, individuals, contacts) — `invoice_custom_fields` désactivé sur cette première run pour valider la mécanique de base
-- Vérifier les données arrivées dans Postgres (counts + structure des tables)
+- **Sync complète des 28 streams Airbyte → Postgres** (plusieurs heures vu le volume + child streams)
+- En parallèle : démarrage des modèles dbt staging
 
 ---
 
 ## ⏳ Backlog
 
-### Phase 1 — Compléter le connecteur Sellsy
+### Phase 1 — 1er dashboard E2E ⭐ (priorité)
 
-⚠️ **Périmètre élargi** : le 1er dashboard a besoin de bien plus que les 5 streams actuels (cf. [`docs/sellsy_endpoints.md`](docs/sellsy_endpoints.md)). Objectif Phase 1 : porter ~20 streams complets dans le connecteur Airbyte.
-
-Plan détaillé dans **[`docs/sellsy_connector_plan.md`](docs/sellsy_connector_plan.md)** — 6 sprints, ~20 streams en 6 groupes :
-- Groupe A : 4 listings via POST `/search`
-- Groupe B : 5 child streams "détails par doc"
-- Groupe C : custom fields + payments
-- Groupe D : tiers enrichis (smart_tags, custom_fields)
-- Groupe E : référentiels
-- Groupe F : API v1 shim (catalogue + résolution parent workflow)
-
-Décision tranchée : **100% Airbyte**, pas de script Python d'ingestion. Le connecteur custom YAML est la seule source d'extraction Sellsy, versionné dans `airbyte/sellsy_v2.yaml`.
-
-### Phase 2 — dbt + dashboard E2E
-
-1. **dbt staging models** : un `stg_sellsy__*` par stream Airbyte
+1. **dbt staging models** — un `stg_sellsy__*` par stream (28 modèles)
    - Dépiler le JSON dans des colonnes typées
    - Naming snake_case homogène
-   - Jointures et logique métier (extraction client_id depuis `related[]`, déduction date dernier paiement, etc.)
-2. **dbt marts** :
-   - `dim_clients` : UNION companies + individuals avec un champ `client_type`
-   - `dim_items` : items + services
-   - `fct_invoices` : table de faits avec FK vers dim_*, custom fields pivotés
-   - `fct_payments`, `fct_credit_notes`, etc.
-3. **Dagster orchestration** :
-   - Asset Airbyte (déclencher la sync)
+   - Extraction `client_id` depuis `related[]` sur invoices/estimates/orders/credit_notes
+   - Filtrage `invoice_payments` aux statuts non-draft/cancelled/scheduled
+2. **dbt marts**
+   - `dim_clients` — UNION `companies` + `individuals` avec `client_type`
+   - `dim_items` — UNION `catalogue_items` + `catalogue_services` avec lookup `catalogue_categories`
+   - `fct_invoices` — table de faits, FK vers `dim_clients`, custom fields pivotés (lookup `custom_fields_definitions`)
+   - `fct_payments`, `fct_credit_notes`, `fct_orders`, `fct_estimates`
+3. **Orchestration Dagster**
+   - Asset Airbyte (déclencher la sync via API)
    - Asset dbt (déjà câblé) qui en dépend
    - Schedule quotidien (ex : 04:00 chaque matin)
-4. **1er dashboard Metabase** :
+4. **1er dashboard Metabase**
    - CA mensuel (graphe ligne)
    - Top 10 clients par CA
    - Factures en retard (table)
-   - But : valider que l'E2E fonctionne, pas la beauté visuelle
+   - But : valider l'E2E, pas la beauté
 
-### Phase 3 — Mode incremental Sellsy
+### Phase 2 — Incremental Sellsy (rolling window 90j)
 
-Aujourd'hui : `Full refresh | Overwrite` sur tous les streams. Marche tant que les volumes restent gérables (~5-20k invoices), mais à terme :
-- Coûteux en API calls (et donc en temps de sync)
-- Trop conservateur vis-à-vis du quota Sellsy mensuel sur de gros volumes
+Aujourd'hui : `Full refresh | Overwrite` sur tous les streams. Marche tant que volumes gérables, mais à terme coûteux.
 
-#### Le piège du schéma Sellsy
+**Le piège** : le schéma `Invoice` v2 n'a pas de champ `updated`, seulement `created`. Impossible de détecter les modifications de statut via un filtre "modified_since" classique.
 
-Le schéma `Invoice` n'a **pas** de champ `updated` — seulement `created`. Conséquence : on ne peut pas détecter les modifications de statut (paid, cancelled…) via un simple filtre temporel "modified_since".
+**Stratégie** : rolling window `created >= now - 90d` sur tous les top-level streams via `POST /search` avec `filters.created.start`. Capture les changements de statut sur la fenêtre vivante, manque les très vieux changements (acceptable).
 
-#### Stratégie envisagée : rolling window full refresh
+Les child streams (`invoice_details`, `invoice_custom_fields`, etc.) bénéficient automatiquement de la restriction parent → pas de logique supplémentaire.
 
-Au lieu de tout re-télécharger, on tire seulement les invoices créées dans les **N derniers jours** (typiquement 90).
+**Caveat** : un custom field ajouté tard sur une vieille facture (> 90j) ne sera plus capté. Si besoin métier, prévoir un full refresh mensuel hors fenêtre.
 
-- API : passer de `GET /v2/invoices` à `POST /v2/invoices/search` avec body :
-  ```json
-  { "filters": { "created": { "start": "{{ now - 90d }}" } } }
-  ```
-- Capture **les changements de statut** sur la fenêtre "vivante" (où ça bouge réellement)
-- Les très vieilles factures cessent d'être resync (acceptable — leur statut ne bouge plus)
-- Tire ~10% du volume vs full refresh complet
-- Implémentation : faisable en Builder YAML (méthode POST + `request_body_json`), pas trivial en UI
-
-#### Propagation aux custom fields
-
-Le stream `invoice_custom_fields` est un **child stream** dérivé du parent `invoices` (via `SubstreamPartitionRouter`). Donc :
-
-- Quand on restreint `invoices` à la rolling window 90j, **le child stream n'appelle automatiquement `/invoices/{id}/custom-fields` que pour ces invoices-là**
-- Pas de logique d'incremental supplémentaire à mettre côté custom fields — c'est gratuit
-- L'endpoint `/invoices/{id}/custom-fields` lui-même n'expose pas de filtre temporel, donc on ne peut pas faire mieux qu'au niveau parent
-
-⚠️ Conséquence : si une vieille facture (> 90j) reçoit un nouveau custom field, on ne le verra plus. À surveiller — si c'est un usage métier réel, faudra un mécanisme de réconciliation périodique (ex : full refresh complet 1× par mois).
-
-### Phase 4 — Production sur VPS OVH
+### Phase 3 — Production sur VPS OVH
 
 - Provisionnement VPS
 - Reverse proxy (Traefik) + HTTPS (Let's Encrypt)
@@ -149,14 +142,16 @@ Le stream `invoice_custom_fields` est un **child stream** dérivé du parent `in
 - Secrets management (`.env` chiffré ou Vault simple)
 - Monitoring (logs centralisés, alerting basique)
 - Migration `abctl local install` côté VPS (même outil qu'en dev)
+- Re-configurer le script `airbyte_push.py` avec l'URL prod (idéalement via une GitHub Action sur push de `main`)
 
-### Phase 5 — Sources additionnelles (selon roadmap métier)
+### Phase 4 — Sources additionnelles (selon roadmap métier)
 
 - Base Cashpad production (replica read-only)
 - Stripe (paiements)
 - Pennylane (compta) si dispo
 - Google Sheets ops/RH
 - Plausible / GA pour le web
+- Sellsy proformas (~2% des invoices, deferré dans Sprint 5d — pattern v1 Document.getOne similaire à invoice_model_parents)
 
 ---
 
@@ -164,11 +159,12 @@ Le stream `invoice_custom_fields` est un **child stream** dérivé du parent `in
 
 | Item | Sévérité | Plan |
 |---|---|---|
-| Mode incremental absent | 🟠 | Phase 3 (quand volume devient un souci) |
-| `invoice_custom_fields` = 1 appel par invoice | 🟡 | Acceptable au volume actuel ; à reconsidérer si > 50k invoices |
+| Mode incremental absent | 🟠 | Phase 2 (quand volume devient un souci) |
+| Endpoint Airbyte `publish` retourne 500 (NPE serveur) → workaround "update draft + clic UI" | 🟡 | Tracker Airbyte ; soit on capture la payload exacte du Builder UI via DevTools, soit on attend un fix upstream |
+| `invoice_model_parents` appelle Document.getOne pour TOUTES les invoices (~80% renvoient une erreur silencieuse) | 🟡 | Acceptable : Sellsy répond vite sur les "not found". À reconsidérer si quota mensuel devient un souci |
 | Postgres en warehouse (warning Airbyte) | 🟢 | Valide jusqu'à ~200 Go / ~100M lignes. Migration ClickHouse envisageable plus tard sans toucher au code dbt |
 | Pas encore d'`error_handler` réactif (uniquement le rate limit proactif) | 🟢 | À ajouter si on observe des 429/5xx non gérés |
-| Connecteur Sellsy en custom (pas de source de vérité Git) | 🟡 | YAML stocké dans Airbyte uniquement ; envisager un export régulier dans `airbyte/sellsy_v2.yaml` du repo |
+| Connecteur Sellsy synchronisé manuellement (draft + clic Publish) | 🟢 | Couvert dès qu'on automatise le publish |
 
 ---
 
@@ -179,13 +175,15 @@ Le stream `invoice_custom_fields` est un **child stream** dérivé du parent `in
 | Postgres en warehouse | Simple, gratuit, dbt-compatible, suffisant à notre volume | BigQuery/Snowflake (cloud $, hors scope MVP) |
 | Airbyte via `abctl` | Voie officielle maintenue (legacy compose déprécié) | Docker Compose Airbyte (deprecated) |
 | dbt dans un container "tools" | Iso prod, lancé via `docker compose run --rm dbt …` | dbt local sur Mac (plus rapide mais divergence dev/prod) |
-| Sellsy V2 (pas V1) | V1 = RPC custom + OAuth 1.0a custom, V2 = REST standard + OAuth2 | V1 (incompatible avec Builder Airbyte) |
-| Connecteur custom YAML | Pas de connecteur Sellsy officiel ; Builder couvre 100% du besoin | Connecteur Python via CDK (overkill pour notre cas) |
+| Sellsy V2 (avec shim v1 pour les trous) | V2 = REST + OAuth2 standard ; v1 = RPC custom mais nécessaire pour catalogue catégories, items consistents, parent workflow, models | Tout en v1 (legacy) ou tout en script Python custom (perd l'orchestration Airbyte) |
+| Connecteur custom YAML versionné dans Git | Pas de connecteur Sellsy officiel ; permet diff, code review, rollback ; le Builder devient un éditeur | YAML uniquement dans Airbyte (perte si crash) |
 | Companies/individuals/contacts en streams séparés | Modèle dimensionnel propre, dédup naturel | Embed inline dans invoices (duplication, snapshots faux) |
 | Adresses (invoicing/delivery/issuer) en embed inline | Sont des **snapshots** historiques au moment de la facturation — comportement voulu | Stream séparé `addresses` (perdrait l'historisation) |
 | Full refresh / Overwrite pour démarrer | Simple, robuste, on rate jamais une modif de statut | Incremental dès le départ (perd les updates de statut sans champ `updated`) |
-| `CursorPagination` (vs `OffsetIncrement`) | Pas de limite 100k records, c'est la méthode "preferred" par Sellsy | OffsetIncrement (cassera passé 100k records) |
+| `CursorPagination` (v2) + `PageIncrement` (v1) | Adapté à chaque API : v2 a un offset cursor base64, v1 a un pagenum simple | OffsetIncrement (cassera passé 100k records en v2) |
 | Rate limit `HTTPAPIBudget` proactif | Lit `X-Quota-Remaining-By-Minute` et temporise avant le 429 | `error_handler` réactif seul (subit le 429 puis retry) |
+| `make airbyte-push` mode "update draft" | Workaround au NPE serveur sur `publish` — on a quand même 95% du gain | Bloquer sur le publish auto |
+| Proformas Sellsy explicitement deferrés | 2% du volume, pas de demande métier, complexité v1 Document.getOne supplémentaire | Les inclure prophylactiquement |
 
 ---
 
@@ -193,33 +191,59 @@ Le stream `invoice_custom_fields` est un **child stream** dérivé du parent `in
 
 ```
 .
-├── architecture-data-stack.md     # vision technique
-├── PROJECT.md                     # ce fichier
-├── INSTALL.md                     # guide d'installation
-├── README.md                      # TL;DR
-├── docker-compose.yml             # Postgres + dbt + Dagster + Metabase
+├── README.md                       # TL;DR + URLs
+├── PROJECT.md                      # ce fichier
+├── INSTALL.md                      # guide d'installation dev
+├── architecture-data-stack.md      # vision technique
+├── Makefile                        # cibles: up, down, airbyte-push, etc.
+├── docker-compose.yml              # Postgres + dbt + Dagster + Metabase
 ├── .env.example
-├── postgres/init/                 # SQL d'init (création des DBs)
-├── dbt/                           # projet dbt
+├── airbyte/
+│   └── sellsy_v2.yaml              # source de vérité du connecteur (28 streams)
+├── postgres/init/                  # SQL d'init (création des DBs)
+├── dbt/                            # projet dbt
 │   ├── Dockerfile
 │   ├── profiles.yml
 │   ├── dbt_project.yml
 │   └── models/
-│       └── example/               # ⚠️ à remplacer par staging/ et marts/
-└── dagster/                       # code Dagster
-    ├── Dockerfile
-    ├── workspace.yaml
-    ├── dagster_home/dagster.yaml
-    └── data_stack/
-        ├── __init__.py
-        └── definitions.py         # actuellement minimal — wire Airbyte assets ici
+│       └── example/                # ⚠️ à remplacer par staging/ et marts/
+├── dagster/                        # code Dagster
+│   ├── Dockerfile
+│   ├── workspace.yaml
+│   ├── dagster_home/dagster.yaml
+│   └── data_stack/
+│       ├── __init__.py
+│       └── definitions.py          # actuellement minimal — wire Airbyte assets ici
+├── scripts/
+│   ├── airbyte_push.py             # uv-runnable, push YAML → Airbyte
+│   └── README.md
+└── docs/
+    ├── SELLSY_API.md
+    ├── sellsy.v2.latest.yaml       # OpenAPI Sellsy V2
+    ├── sellsy_endpoints.md         # inventaire endpoints à consommer
+    ├── sellsy_connector_plan.md    # plan détaillé du connecteur (sprints 1→5)
+    └── airbyte_sync_plan.md        # design du script CLI
 ```
 
 ---
 
 ## 🎯 Prochain pas concret
 
-1. Sync Airbyte → Postgres (4 streams)
-2. `\dt` dans Postgres pour voir les tables/schémas réellement créés
-3. Écrire `dbt/models/staging/sellsy/stg_sellsy__invoices.sql`
-4. `docker compose run --rm dbt dbt build` pour vérifier
+1. **Commit Sprint 5** (a + b + d) + push GitHub
+2. **Publish v8** dans Airbyte Builder UI (1 clic)
+3. **Source → Upgrade**, **Connection → Refresh source schema**, **activer les 28 streams**, **Sync now**
+4. Pendant le sync (3-6h estimées) : **écrire les 1er staging models dbt** (`stg_sellsy__invoices`, `stg_sellsy__companies`, `stg_sellsy__individuals`)
+5. Une fois le sync vert : `\dt` côté Postgres pour valider les ~28 tables `raw.*`
+6. `docker compose run --rm dbt dbt build` pour exécuter les staging
+
+---
+
+## 📊 Métriques du projet
+
+| Métrique | Valeur |
+|---|---|
+| Streams Airbyte | 28 |
+| Sprints connecteur réalisés | 5 (1, 2, 3, 4, 5a, 5b, 5d) |
+| Phases backlog restantes | 4 |
+| Lignes YAML du connecteur | ~2 500 |
+| Effort équivalent dev solo (estimé) | ~10 jours (60% du chemin vers 1er dashboard E2E) |
