@@ -1,0 +1,17 @@
+.env
+*.log
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Dagster local state — garde dagster.yaml (config), ignore le reste
+dagster/dagster_home/*
+!dagster/dagster_home/dagster.yaml
+dagster/**/__pycache__/
+dagster/**/*.pyc
