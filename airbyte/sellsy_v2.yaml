@@ -1,0 +1,1851 @@
+version: 7.10.0
+
+type: DeclarativeSource
+
+check:
+  type: CheckStream
+  stream_names:
+    - invoices
+
+definitions:
+  linked:
+    HttpRequester:
+      authenticator:
+        type: OAuthAuthenticator
+        client_id: "{{ config['client_id'] }}"
+        grant_type: client_credentials
+        client_secret: "{{ config['client_secret'] }}"
+        refresh_request_body: {}
+        token_refresh_endpoint: https://login.sellsy.com/oauth2/access-tokens
+    SimpleRetriever:
+      paginator:
+        type: DefaultPaginator
+        page_size_option:
+          type: RequestOption
+          field_name: limit
+          inject_into: request_parameter
+        page_token_option:
+          type: RequestOption
+          field_name: offset
+          inject_into: request_parameter
+        pagination_strategy:
+          type: CursorPagination
+          page_size: 100
+          cursor_value: "{{ response.pagination.offset }}"
+          stop_condition: "{{ response.pagination.count < response.pagination.limit }}"
+
+streams:
+  - type: DeclarativeStream
+    name: invoices
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        type: DefaultPaginator
+        page_size_option:
+          type: RequestOption
+          field_name: limit
+          inject_into: request_parameter
+        page_token_option:
+          type: RequestOption
+          field_name: offset
+          inject_into: request_parameter
+        pagination_strategy:
+          type: OffsetIncrement
+          page_size: 100
+          inject_on_first_request: false
+      requester:
+        type: HttpRequester
+        url: >-
+          https://api.sellsy.com/v2/invoices?embed[]=acl&embed[]=owner&embed[]=related&embed[]=fiscal_year&embed[]=currency&embed[]=smart_tags&embed[]=deposits&embed[]=invoicing_address&embed[]=delivery_address&embed[]=issuer_address&embed[]=payment_method_ids
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: number
+          date:
+            type:
+              - string
+              - "null"
+          note:
+            type:
+              - string
+              - "null"
+          owner:
+            type:
+              - object
+              - "null"
+            properties:
+              type:
+                type:
+                  - string
+                  - "null"
+              id:
+                type:
+                  - number
+                  - "null"
+          taxes:
+            type:
+              - array
+              - "null"
+            items:
+              type:
+                - object
+                - "null"
+              properties:
+                id:
+                  type:
+                    - number
+                    - "null"
+                rate:
+                  type:
+                    - string
+                    - "null"
+                label:
+                  type:
+                    - string
+                    - "null"
+                amount:
+                  type:
+                    - string
+                    - "null"
+          _embed:
+            type:
+              - object
+              - "null"
+            properties:
+              acl:
+                type:
+                  - object
+                  - "null"
+                properties:
+                  can_be_deleted:
+                    type:
+                      - boolean
+                      - "null"
+                  can_be_updated:
+                    type:
+                      - boolean
+                      - "null"
+                  can_be_validated:
+                    type:
+                      - boolean
+                      - "null"
+              related:
+                type:
+                  - array
+                  - "null"
+                items:
+                  type:
+                    - object
+                    - "null"
+                  properties:
+                    type:
+                      type:
+                        - string
+                        - "null"
+                    id:
+                      type:
+                        - number
+                        - "null"
+                    name:
+                      type:
+                        - string
+                        - "null"
+                    note:
+                      type:
+                        - string
+                        - "null"
+                    sync:
+                      type:
+                        - object
+                        - "null"
+                      properties:
+                        mailjet:
+                          type:
+                            - boolean
+                            - "null"
+                        mailchimp:
+                          type:
+                            - boolean
+                            - "null"
+                        simplemail:
+                          type:
+                            - boolean
+                            - "null"
+                    email:
+                      type:
+                        - string
+                        - "null"
+                    owner:
+                      type:
+                        - object
+                        - "null"
+                      properties:
+                        type:
+                          type:
+                            - string
+                            - "null"
+                        id:
+                          type:
+                            - number
+                            - "null"
+                    social:
+                      type:
+                        - object
+                        - "null"
+                      properties:
+                        twitter:
+                          type:
+                            - string
+                            - "null"
+                        facebook:
+                          type:
+                            - string
+                            - "null"
+                    capital:
+                      type:
+                        - string
+                        - "null"
+                    created:
+                      type:
+                        - string
+                        - "null"
+                    updated:
+                      type:
+                        - string
+                        - "null"
+                    website:
+                      type:
+                        - string
+                        - "null"
+                    civility:
+                      type:
+                        - string
+                        - "null"
+                    position:
+                      type:
+                        - string
+                        - "null"
+                    last_name:
+                      type:
+                        - string
+                        - "null"
+                    reference:
+                      type:
+                        - string
+                        - "null"
+                    birth_date:
+                      type:
+                        - string
+                        - "null"
+                    first_name:
+                      type:
+                        - string
+                        - "null"
+                    updated_at:
+                      type:
+                        - string
+                        - "null"
+                    is_archived:
+                      type:
+                        - boolean
+                        - "null"
+                    legal_france:
+                      type:
+                        - object
+                        - "null"
+                      properties:
+                        vat:
+                          type:
+                            - string
+                            - "null"
+                        siren:
+                          type:
+                            - string
+                            - "null"
+                        siret:
+                          type:
+                            - string
+                            - "null"
+                        ape_naf_code:
+                          type:
+                            - string
+                            - "null"
+                        company_type:
+                          type:
+                            - string
+                            - "null"
+                        rcs_immatriculation:
+                          type:
+                            - string
+                            - "null"
+                    phone_number:
+                      type:
+                        - string
+                        - "null"
+                    rgpd_consent:
+                      type:
+                        - object
+                        - "null"
+                      properties:
+                        sms:
+                          type:
+                            - boolean
+                            - "null"
+                        email:
+                          type:
+                            - boolean
+                            - "null"
+                        phone:
+                          type:
+                            - boolean
+                            - "null"
+                        custom:
+                          type:
+                            - boolean
+                            - "null"
+                        postal_mail:
+                          type:
+                            - boolean
+                            - "null"
+                    mobile_number:
+                      type:
+                        - string
+                        - "null"
+                    auxiliary_code:
+                      type:
+                        - string
+                        - "null"
+                    main_contact_id:
+                      type:
+                        - number
+                        - "null"
+                    business_segment:
+                      type:
+                        - object
+                        - "null"
+                      properties:
+                        id:
+                          type:
+                            - number
+                            - "null"
+                        label:
+                          type:
+                            - string
+                            - "null"
+                    rate_category_id:
+                      type:
+                        - number
+                        - "null"
+                    accounting_code_id:
+                      type:
+                        - number
+                        - "null"
+                    dunning_contact_id:
+                      type:
+                        - number
+                        - "null"
+                    delivery_address_id:
+                      type:
+                        - number
+                        - "null"
+                    invoicing_address_id:
+                      type:
+                        - number
+                        - "null"
+                    invoicing_contact_id:
+                      type:
+                        - number
+                        - "null"
+                    accounting_purchase_code_id:
+                      type:
+                        - number
+                        - "null"
+                    marketing_campaigns_subscriptions:
+                      type:
+                        - array
+                        - "null"
+                      items:
+                        type:
+                          - string
+                          - "null"
+              currency:
+                type:
+                  - object
+                  - "null"
+                properties:
+                  id:
+                    type:
+                      - number
+                      - "null"
+                  code:
+                    type:
+                      - string
+                      - "null"
+                  symbol:
+                    type:
+                      - string
+                      - "null"
+                  is_default:
+                    type:
+                      - boolean
+                      - "null"
+              deposits:
+                type:
+                  - array
+                  - "null"
+                items:
+                  type:
+                    - object
+                    - "null"
+                  properties:
+                    type:
+                      type:
+                        - string
+                        - "null"
+                    id:
+                      type:
+                        - number
+                        - "null"
+                    date:
+                      type:
+                        - string
+                        - "null"
+                    amount:
+                      type:
+                        - string
+                        - "null"
+                    number:
+                      type:
+                        - string
+                        - "null"
+              smart_tags:
+                type:
+                  - array
+                  - "null"
+                items:
+                  type:
+                    - object
+                    - "null"
+                  properties:
+                    id:
+                      type:
+                        - number
+                        - "null"
+                    value:
+                      type:
+                        - string
+                        - "null"
+                    availableTags:
+                      type:
+                        - array
+                        - "null"
+              fiscal_year:
+                type:
+                  - object
+                  - "null"
+                properties:
+                  id:
+                    type:
+                      - number
+                      - "null"
+                  end_at:
+                    type:
+                      - string
+                      - "null"
+                  start_at:
+                    type:
+                      - string
+                      - "null"
+              issuer_address:
+                type:
+                  - object
+                  - "null"
+                properties:
+                  id:
+                    type:
+                      - number
+                      - "null"
+                  city:
+                    type:
+                      - string
+                      - "null"
+                  name:
+                    type:
+                      - string
+                      - "null"
+                  country:
+                    type:
+                      - string
+                      - "null"
+                  geocode:
+                    type:
+                      - object
+                      - "null"
+                    properties: {}
+                  postal_code:
+                    type:
+                      - string
+                      - "null"
+                  country_code:
+                    type:
+                      - string
+                      - "null"
+                  address_line_1:
+                    type:
+                      - string
+                      - "null"
+                  address_line_2:
+                    type:
+                      - string
+                      - "null"
+                  is_delivery_address:
+                    type:
+                      - boolean
+                      - "null"
+                  is_invoicing_address:
+                    type:
+                      - boolean
+                      - "null"
+              delivery_address:
+                type:
+                  - object
+                  - "null"
+                properties:
+                  id:
+                    type:
+                      - number
+                      - "null"
+                  city:
+                    type:
+                      - string
+                      - "null"
+                  name:
+                    type:
+                      - string
+                      - "null"
+                  country:
+                    type:
+                      - string
+                      - "null"
+                  geocode:
+                    type:
+                      - object
+                      - "null"
+                    properties:
+                      lat:
+                        type:
+                          - number
+                          - "null"
+                      lng:
+                        type:
+                          - number
+                          - "null"
+                  postal_code:
+                    type:
+                      - string
+                      - "null"
+                  country_code:
+                    type:
+                      - string
+                      - "null"
+                  address_line_1:
+                    type:
+                      - string
+                      - "null"
+                  address_line_2:
+                    type:
+                      - string
+                      - "null"
+                  address_line_3:
+                    type:
+                      - string
+                      - "null"
+                  address_line_4:
+                    type:
+                      - string
+                      - "null"
+                  is_delivery_address:
+                    type:
+                      - boolean
+                      - "null"
+                  is_invoicing_address:
+                    type:
+                      - boolean
+                      - "null"
+              invoicing_address:
+                type:
+                  - object
+                  - "null"
+                properties:
+                  id:
+                    type:
+                      - number
+                      - "null"
+                  city:
+                    type:
+                      - string
+                      - "null"
+                  name:
+                    type:
+                      - string
+                      - "null"
+                  country:
+                    type:
+                      - string
+                      - "null"
+                  geocode:
+                    type:
+                      - object
+                      - "null"
+                    properties:
+                      lat:
+                        type:
+                          - number
+                          - "null"
+                      lng:
+                        type:
+                          - number
+                          - "null"
+                  postal_code:
+                    type:
+                      - string
+                      - "null"
+                  country_code:
+                    type:
+                      - string
+                      - "null"
+                  address_line_1:
+                    type:
+                      - string
+                      - "null"
+                  address_line_2:
+                    type:
+                      - string
+                      - "null"
+                  address_line_3:
+                    type:
+                      - string
+                      - "null"
+                  address_line_4:
+                    type:
+                      - string
+                      - "null"
+                  is_delivery_address:
+                    type:
+                      - boolean
+                      - "null"
+                  is_invoicing_address:
+                    type:
+                      - boolean
+                      - "null"
+              payment_method_ids:
+                type:
+                  - array
+                  - "null"
+                items:
+                  type:
+                    - object
+                    - "null"
+                  properties:
+                    id:
+                      type:
+                        - number
+                        - "null"
+                    label:
+                      type:
+                        - string
+                        - "null"
+          number:
+            type:
+              - string
+              - "null"
+          parent:
+            type:
+              - object
+              - "null"
+            properties:
+              type:
+                type:
+                  - string
+                  - "null"
+              id:
+                type:
+                  - number
+                  - "null"
+          status:
+            type:
+              - string
+              - "null"
+          amounts:
+            type:
+              - object
+              - "null"
+            properties:
+              total_excl_tax:
+                type:
+                  - string
+                  - "null"
+              total_incl_tax:
+                type:
+                  - string
+                  - "null"
+              total_shipping:
+                type:
+                  - string
+                  - "null"
+              total_packaging:
+                type:
+                  - string
+                  - "null"
+              total_raw_excl_tax:
+                type:
+                  - string
+                  - "null"
+              total_primes_incl_tax:
+                type:
+                  - string
+                  - "null"
+              total_remaining_due_incl_tax:
+                type:
+                  - string
+                  - "null"
+              total_after_discount_excl_tax:
+                type:
+                  - string
+                  - "null"
+          created:
+            type:
+              - string
+              - "null"
+          file_id:
+            type:
+              - number
+              - "null"
+          related:
+            type:
+              - array
+              - "null"
+            items:
+              type:
+                - object
+                - "null"
+              properties:
+                type:
+                  type:
+                    - string
+                    - "null"
+                id:
+                  type:
+                    - number
+                    - "null"
+          subject:
+            type:
+              - string
+              - "null"
+          currency:
+            type:
+              - string
+              - "null"
+          due_date:
+            type:
+              - string
+              - "null"
+          pdf_link:
+            type:
+              - string
+              - "null"
+          vat_mode:
+            type:
+              - string
+              - "null"
+          layout_id:
+            type:
+              - number
+              - "null"
+          contact_id:
+            type:
+              - number
+              - "null"
+          eco_tax_id:
+            type:
+              - number
+              - "null"
+          is_deposit:
+            type:
+              - boolean
+              - "null"
+          public_link:
+            type:
+              - object
+              - "null"
+            properties:
+              url:
+                type:
+                  - string
+                  - "null"
+              enabled:
+                type:
+                  - boolean
+                  - "null"
+          company_name:
+            type:
+              - string
+              - "null"
+          analytic_code:
+            type:
+              - string
+              - "null"
+          shipping_date:
+            type:
+              - string
+              - "null"
+          check_label_id:
+            type:
+              - number
+              - "null"
+          decimal_number:
+            type:
+              - object
+              - "null"
+            properties:
+              main:
+                type:
+                  - number
+                  - "null"
+              quantity:
+                type:
+                  - number
+                  - "null"
+              unit_price:
+                type:
+                  - number
+                  - "null"
+          fiscal_year_id:
+            type:
+              - number
+              - "null"
+          bank_account_id:
+            type:
+              - number
+              - "null"
+          order_reference:
+            type:
+              - string
+              - "null"
+          shipping_volume:
+            type:
+              - string
+              - "null"
+          shipping_weight:
+            type:
+              - object
+              - "null"
+            properties:
+              unit:
+                type:
+                  - string
+                  - "null"
+              value:
+                type:
+                  - string
+                  - "null"
+          subscription_id:
+            type:
+              - number
+              - "null"
+          rate_category_id:
+            type:
+              - number
+              - "null"
+          assigned_staff_id:
+            type:
+              - number
+              - "null"
+          company_reference:
+            type:
+              - string
+              - "null"
+          issuer_address_id:
+            type:
+              - number
+              - "null"
+          payment_method_ids:
+            type:
+              - array
+              - "null"
+            items:
+              type:
+                - number
+                - "null"
+          delivery_address_id:
+            type:
+              - number
+              - "null"
+          is_progress_invoice:
+            type:
+              - boolean
+              - "null"
+          invoicing_address_id:
+            type:
+              - number
+              - "null"
+          is_sent_to_accounting:
+            type:
+              - boolean
+              - "null"
+          payment_conditions_acceptance:
+            type:
+              - object
+              - "null"
+            properties:
+              enabled:
+                type:
+                  - boolean
+                  - "null"
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: companies
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      requester:
+        type: HttpRequester
+        url: >-
+          https://api.sellsy.com/v2/companies?embed[]=main_contact&embed[]=invoicing_address&embed[]=smart_tags
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          type:
+            type:
+              - string
+              - "null"
+          id:
+            type: number
+          name:
+            type:
+              - string
+              - "null"
+          note:
+            type:
+              - string
+              - "null"
+          email:
+            type:
+              - string
+              - "null"
+          owner:
+            type:
+              - object
+              - "null"
+            properties:
+              type:
+                type:
+                  - string
+                  - "null"
+              id:
+                type:
+                  - number
+                  - "null"
+          _embed:
+            type:
+              - object
+              - "null"
+            properties:
+              smart_tags:
+                type:
+                  - array
+                  - "null"
+                items:
+                  type:
+                    - object
+                    - "null"
+                  properties:
+                    id:
+                      type:
+                        - number
+                        - "null"
+                    value:
+                      type:
+                        - string
+                        - "null"
+                    availableTags:
+                      type:
+                        - array
+                        - "null"
+              main_contact:
+                type:
+                  - object
+                  - "null"
+                properties:
+                  id:
+                    type:
+                      - number
+                      - "null"
+                  note:
+                    type:
+                      - string
+                      - "null"
+                  sync:
+                    type:
+                      - object
+                      - "null"
+                    properties:
+                      mailjet:
+                        type:
+                          - boolean
+                          - "null"
+                      mailchimp:
+                        type:
+                          - boolean
+                          - "null"
+                      simplemail:
+                        type:
+                          - boolean
+                          - "null"
+                  email:
+                    type:
+                      - string
+                      - "null"
+                  owner:
+                    type:
+                      - object
+                      - "null"
+                    properties:
+                      type:
+                        type:
+                          - string
+                          - "null"
+                      id:
+                        type:
+                          - number
+                          - "null"
+                  social:
+                    type:
+                      - object
+                      - "null"
+                    properties: {}
+                  created:
+                    type:
+                      - string
+                      - "null"
+                  updated:
+                    type:
+                      - string
+                      - "null"
+                  civility:
+                    type:
+                      - string
+                      - "null"
+                  position:
+                    type:
+                      - string
+                      - "null"
+                  last_name:
+                    type:
+                      - string
+                      - "null"
+                  birth_date:
+                    type:
+                      - string
+                      - "null"
+                  fax_number:
+                    type:
+                      - string
+                      - "null"
+                  first_name:
+                    type:
+                      - string
+                      - "null"
+                  is_archived:
+                    type:
+                      - boolean
+                      - "null"
+                  phone_number:
+                    type:
+                      - string
+                      - "null"
+                  rgpd_consent:
+                    type:
+                      - object
+                      - "null"
+                    properties:
+                      sms:
+                        type:
+                          - boolean
+                          - "null"
+                      email:
+                        type:
+                          - boolean
+                          - "null"
+                      phone:
+                        type:
+                          - boolean
+                          - "null"
+                      custom:
+                        type:
+                          - boolean
+                          - "null"
+                      postal_mail:
+                        type:
+                          - boolean
+                          - "null"
+                  mobile_number:
+                    type:
+                      - string
+                      - "null"
+                  invoicing_address_id:
+                    type:
+                      - number
+                      - "null"
+                  marketing_campaigns_subscriptions:
+                    type:
+                      - array
+                      - "null"
+                    items:
+                      type:
+                        - string
+                        - "null"
+              invoicing_address:
+                type:
+                  - object
+                  - "null"
+                properties:
+                  id:
+                    type:
+                      - number
+                      - "null"
+                  city:
+                    type:
+                      - string
+                      - "null"
+                  name:
+                    type:
+                      - string
+                      - "null"
+                  country:
+                    type:
+                      - string
+                      - "null"
+                  geocode:
+                    type:
+                      - object
+                      - "null"
+                    properties:
+                      lat:
+                        type:
+                          - number
+                          - "null"
+                      lng:
+                        type:
+                          - number
+                          - "null"
+                  postal_code:
+                    type:
+                      - string
+                      - "null"
+                  country_code:
+                    type:
+                      - string
+                      - "null"
+                  address_line_1:
+                    type:
+                      - string
+                      - "null"
+                  address_line_2:
+                    type:
+                      - string
+                      - "null"
+                  address_line_3:
+                    type:
+                      - string
+                      - "null"
+                  is_delivery_address:
+                    type:
+                      - boolean
+                      - "null"
+                  is_invoicing_address:
+                    type:
+                      - boolean
+                      - "null"
+          social:
+            type:
+              - object
+              - "null"
+            properties:
+              twitter:
+                type:
+                  - string
+                  - "null"
+              facebook:
+                type:
+                  - string
+                  - "null"
+          capital:
+            type:
+              - string
+              - "null"
+          created:
+            type:
+              - string
+              - "null"
+          website:
+            type:
+              - string
+              - "null"
+          reference:
+            type:
+              - string
+              - "null"
+          updated_at:
+            type:
+              - string
+              - "null"
+          is_archived:
+            type:
+              - boolean
+              - "null"
+          legal_france:
+            type:
+              - object
+              - "null"
+            properties:
+              vat:
+                type:
+                  - string
+                  - "null"
+              siren:
+                type:
+                  - string
+                  - "null"
+              siret:
+                type:
+                  - string
+                  - "null"
+              ape_naf_code:
+                type:
+                  - string
+                  - "null"
+              company_type:
+                type:
+                  - string
+                  - "null"
+              rcs_immatriculation:
+                type:
+                  - string
+                  - "null"
+          phone_number:
+            type:
+              - string
+              - "null"
+          rgpd_consent:
+            type:
+              - object
+              - "null"
+            properties:
+              sms:
+                type:
+                  - boolean
+                  - "null"
+              email:
+                type:
+                  - boolean
+                  - "null"
+              phone:
+                type:
+                  - boolean
+                  - "null"
+              custom:
+                type:
+                  - boolean
+                  - "null"
+              postal_mail:
+                type:
+                  - boolean
+                  - "null"
+          mobile_number:
+            type:
+              - string
+              - "null"
+          auxiliary_code:
+            type:
+              - string
+              - "null"
+          main_contact_id:
+            type:
+              - number
+              - "null"
+          business_segment:
+            type:
+              - object
+              - "null"
+            properties:
+              id:
+                type:
+                  - number
+                  - "null"
+              label:
+                type:
+                  - string
+                  - "null"
+          rate_category_id:
+            type:
+              - number
+              - "null"
+          accounting_code_id:
+            type:
+              - number
+              - "null"
+          dunning_contact_id:
+            type:
+              - number
+              - "null"
+          delivery_address_id:
+            type:
+              - number
+              - "null"
+          invoicing_address_id:
+            type:
+              - number
+              - "null"
+          invoicing_contact_id:
+            type:
+              - number
+              - "null"
+          accounting_purchase_code_id:
+            type:
+              - number
+              - "null"
+          marketing_campaigns_subscriptions:
+            type:
+              - array
+              - "null"
+            items:
+              type:
+                - string
+                - "null"
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: individuals
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      requester:
+        type: HttpRequester
+        url: https://api.sellsy.com/v2/individuals
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          type:
+            type:
+              - string
+              - "null"
+          id:
+            type: number
+          note:
+            type:
+              - string
+              - "null"
+          sync:
+            type:
+              - object
+              - "null"
+            properties:
+              mailjet:
+                type:
+                  - boolean
+                  - "null"
+              mailchimp:
+                type:
+                  - boolean
+                  - "null"
+              simplemail:
+                type:
+                  - boolean
+                  - "null"
+          email:
+            type:
+              - string
+              - "null"
+          owner:
+            type:
+              - object
+              - "null"
+            properties:
+              type:
+                type:
+                  - string
+                  - "null"
+              id:
+                type:
+                  - number
+                  - "null"
+          social:
+            type:
+              - object
+              - "null"
+            properties: {}
+          created:
+            type:
+              - string
+              - "null"
+          website:
+            type:
+              - string
+              - "null"
+          civility:
+            type:
+              - string
+              - "null"
+          last_name:
+            type:
+              - string
+              - "null"
+          reference:
+            type:
+              - string
+              - "null"
+          first_name:
+            type:
+              - string
+              - "null"
+          updated_at:
+            type:
+              - string
+              - "null"
+          is_archived:
+            type:
+              - boolean
+              - "null"
+          phone_number:
+            type:
+              - string
+              - "null"
+          rgpd_consent:
+            type:
+              - object
+              - "null"
+            properties:
+              sms:
+                type:
+                  - boolean
+                  - "null"
+              email:
+                type:
+                  - boolean
+                  - "null"
+              phone:
+                type:
+                  - boolean
+                  - "null"
+              custom:
+                type:
+                  - boolean
+                  - "null"
+              postal_mail:
+                type:
+                  - boolean
+                  - "null"
+          mobile_number:
+            type:
+              - string
+              - "null"
+          auxiliary_code:
+            type:
+              - string
+              - "null"
+          main_contact_id:
+            type:
+              - number
+              - "null"
+          rate_category_id:
+            type:
+              - number
+              - "null"
+          accounting_code_id:
+            type:
+              - number
+              - "null"
+          delivery_address_id:
+            type:
+              - number
+              - "null"
+          invoicing_address_id:
+            type:
+              - number
+              - "null"
+          invoicing_contact_id:
+            type:
+              - number
+              - "null"
+          accounting_purchase_code_id:
+            type:
+              - number
+              - "null"
+          marketing_campaigns_subscriptions:
+            type:
+              - array
+              - "null"
+            items:
+              type:
+                - string
+                - "null"
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: contacts
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      requester:
+        type: HttpRequester
+        url: https://api.sellsy.com/v2/contacts
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+    primary_key: id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - id
+        properties:
+          id:
+            type: number
+          note:
+            type:
+              - string
+              - "null"
+          sync:
+            type:
+              - object
+              - "null"
+            properties:
+              mailjet:
+                type:
+                  - boolean
+                  - "null"
+              mailchimp:
+                type:
+                  - boolean
+                  - "null"
+              simplemail:
+                type:
+                  - boolean
+                  - "null"
+          email:
+            type:
+              - string
+              - "null"
+          owner:
+            type:
+              - object
+              - "null"
+            properties:
+              type:
+                type:
+                  - string
+                  - "null"
+              id:
+                type:
+                  - number
+                  - "null"
+          social:
+            type:
+              - object
+              - "null"
+            properties: {}
+          created:
+            type:
+              - string
+              - "null"
+          updated:
+            type:
+              - string
+              - "null"
+          website:
+            type:
+              - string
+              - "null"
+          civility:
+            type:
+              - string
+              - "null"
+          position:
+            type:
+              - string
+              - "null"
+          last_name:
+            type:
+              - string
+              - "null"
+          birth_date:
+            type:
+              - string
+              - "null"
+          fax_number:
+            type:
+              - string
+              - "null"
+          first_name:
+            type:
+              - string
+              - "null"
+          is_archived:
+            type:
+              - boolean
+              - "null"
+          phone_number:
+            type:
+              - string
+              - "null"
+          rgpd_consent:
+            type:
+              - object
+              - "null"
+            properties:
+              sms:
+                type:
+                  - boolean
+                  - "null"
+              email:
+                type:
+                  - boolean
+                  - "null"
+              phone:
+                type:
+                  - boolean
+                  - "null"
+              custom:
+                type:
+                  - boolean
+                  - "null"
+              postal_mail:
+                type:
+                  - boolean
+                  - "null"
+          mobile_number:
+            type:
+              - string
+              - "null"
+          invoicing_address_id:
+            type:
+              - number
+              - "null"
+          marketing_campaigns_subscriptions:
+            type:
+              - array
+              - "null"
+            items:
+              type:
+                - string
+                - "null"
+        additionalProperties: true
+  - type: DeclarativeStream
+    name: invoice_custom_fields
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      requester:
+        type: HttpRequester
+        url: >-
+          https://api.sellsy.com/v2/invoices/{{ stream_partition['invoice_id']
+          }}/custom-fields
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - data
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - type: ParentStreamConfig
+            stream:
+              $ref: "#/streams/0"
+            parent_key: id
+            partition_field: invoice_id
+    primary_key:
+      - invoice_id
+      - id
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - invoice_id
+          - id
+        properties:
+          id:
+            type: number
+          invoice_id:
+            type: number
+        additionalProperties: true
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - invoice_id
+            value: "{{ stream_partition['invoice_id'] }}"
+            value_type: integer
+
+spec:
+  type: Spec
+  connection_specification:
+    type: object
+    $schema: http://json-schema.org/draft-07/schema#
+    required:
+      - client_id
+      - client_secret
+      - client_refresh_token
+    properties:
+      client_id:
+        type: string
+        order: 0
+        title: Client ID
+        airbyte_secret: true
+      client_secret:
+        type: string
+        order: 1
+        title: Client secret
+        airbyte_secret: true
+      client_access_token:
+        type: string
+        order: 3
+        title: Access token
+        airbyte_hidden: true
+        airbyte_secret: true
+      client_refresh_token:
+        type: string
+        order: 2
+        title: Refresh token
+        airbyte_secret: true
+    additionalProperties: true
+
+metadata:
+  testedStreams:
+    contacts:
+      isStale: false
+      hasRecords: true
+      streamHash: 985f18f255481bcd77ad79e58cc544d172100a9d
+      hasResponse: true
+      primaryKeysAreUnique: true
+      primaryKeysArePresent: true
+      responsesAreSuccessful: true
+    invoices:
+      isStale: false
+      hasRecords: true
+      streamHash: eb3f53fc9afb823fd8c37c2fb09f1772125c7d90
+      hasResponse: true
+      primaryKeysAreUnique: true
+      primaryKeysArePresent: true
+      responsesAreSuccessful: true
+    stream_0:
+      streamHash: ad11f9fa446b445a056b0f48d54e74059e0bc977
+    companies:
+      isStale: false
+      hasRecords: true
+      streamHash: 3698b63514a1ea7ace95ff1082d44c7d9ea465c2
+      hasResponse: true
+      primaryKeysAreUnique: true
+      primaryKeysArePresent: true
+      responsesAreSuccessful: true
+    individuals:
+      isStale: false
+      hasRecords: true
+      streamHash: 31d72323a6ea8f28f2d3f95b34333728e2bd7883
+      hasResponse: true
+      primaryKeysAreUnique: true
+      primaryKeysArePresent: true
+      responsesAreSuccessful: true
+    invoice_custom_fields:
+      isStale: false
+      hasRecords: true
+      streamHash: b4e2ee9b31f6f472a00e085a7b9234a53da843f0
+      hasResponse: true
+      primaryKeysAreUnique: false
+      primaryKeysArePresent: true
+      responsesAreSuccessful: true
+  autoImportSchema:
+    contacts: true
+    invoices: true
+    companies: true
+    individuals: true
+    invoice_custom_fields: true
+
+api_budget:
+  type: HTTPAPIBudget
+  policies:
+    - type: MovingWindowCallRatePolicy
+      rates:
+        - limit: 148
+          interval: PT1M
+        - limit: 23
+          interval: PT1S
+      matchers:
+        - method: GET
+          url_path_pattern: .*
+  ratelimit_remaining_header: X-Quota-Remaining-By-Minute
+  status_codes_for_ratelimit_hit:
+    - 429
