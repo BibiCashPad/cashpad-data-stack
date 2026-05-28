@@ -1,0 +1,67 @@
+version: 2
+
+# ──────────────────────────────────────────────────────────────────────────
+# Déclaration des tables RAW ingérées par Airbyte depuis Sellsy V2.
+# Chaque entrée donne à dbt un alias `source('sellsy', 'XXX')` qu'on peut
+# utiliser dans les models staging.
+#
+# Le schéma `raw` côté Postgres a été créé par notre init SQL.
+# Airbyte y dépose les tables au nom du stream (ex: stream `invoices`
+# → table `raw.invoices`).
+# ──────────────────────────────────────────────────────────────────────────
+
+sources:
+  - name: sellsy
+    description: "Données brutes Sellsy V2 ingérées par Airbyte"
+    schema: raw
+    tables:
+      # Top-level documents
+      - name: invoices
+        description: "Factures (POST /v2/invoices/search)"
+      - name: credit_notes
+        description: "Avoirs"
+      - name: deliveries
+        description: "Bons de livraison"
+      - name: orders
+        description: "Commandes (BDC)"
+      - name: estimates
+        description: "Devis"
+      - name: deposit_invoices
+        description: "Factures d'acompte"
+      # progress_invoices : non extractibles via Sellsy V2 (API expose
+      # uniquement POST pour création, pas de GET ni search). Drop intentionnel.
+      - name: opportunities
+        description: "Opportunités commerciales"
+
+      # Détails (child streams - contiennent rows / amounts détaillés)
+      - name: invoice_details
+      - name: credit_note_details
+      - name: delivery_details
+      - name: order_details
+
+      # Tiers
+      - name: companies
+      - name: individuals
+      - name: contacts
+
+      # Custom fields & smart tags (child streams paginés)
+      - name: invoice_custom_fields
+      - name: credit_note_custom_fields
+      - name: order_custom_fields
+      - name: invoice_payments
+      - name: company_smart_tags
+      - name: company_custom_fields
+      - name: individual_smart_tags
+      - name: individual_custom_fields
+
+      # Parents v1 (résolution workflow)
+      - name: delivery_parents
+      - name: order_parents
+      - name: invoice_model_parents
+
+      # Référentiels
+      - name: custom_fields_definitions
+      - name: rate_categories
+      - name: catalogue_categories
+      - name: catalogue_items
+      - name: catalogue_services
