@@ -122,17 +122,82 @@ Repo `BibiCashPad/cashpad-data-stack` sur GitHub. Commits par bloc cohérent. Br
    - Factures en retard (table)
    - But : valider l'E2E, pas la beauté
 
-### Phase 2 — Incremental Sellsy (rolling window 90j)
+### Phase 2 — Incremental Sellsy (rolling window) ⚙️ machinerie en place
 
-Aujourd'hui : `Full refresh | Overwrite` sur tous les streams. Marche tant que volumes gérables, mais à terme coûteux.
+**Statut : machinerie codée, désactivée par défaut, activation manuelle.**
 
-**Le piège** : le schéma `Invoice` v2 n'a pas de champ `updated`, seulement `created`. Impossible de détecter les modifications de statut via un filtre "modified_since" classique.
+Aujourd'hui : `Full refresh | Overwrite` sur tous les streams (par défaut `lookback_days=36500` ≈ 100 ans = filtre inactif). Marche tant que volumes gérables, mais à terme coûteux.
 
-**Stratégie** : rolling window `created >= now - 90d` sur tous les top-level streams via `POST /search` avec `filters.created.start`. Capture les changements de statut sur la fenêtre vivante, manque les très vieux changements (acceptable).
+#### Le piège du schéma Sellsy
 
-Les child streams (`invoice_details`, `invoice_custom_fields`, etc.) bénéficient automatiquement de la restriction parent → pas de logique supplémentaire.
+Le schéma `Invoice` v2 n'a **pas** de champ `updated`, seulement `created`. Impossible de détecter les modifications de statut via un filtre "modified_since" classique. La stratégie utilise donc `created` comme cursor (et non `updated`).
 
-**Caveat** : un custom field ajouté tard sur une vieille facture (> 90j) ne sera plus capté. Si besoin métier, prévoir un full refresh mensuel hors fenêtre.
+#### Stratégie : rolling window
+
+Rolling window `created >= now - lookback_days` sur les streams top-level avec `POST /search`, via le paramètre de config `lookback_days` injecté dans le body :
+
+```yaml
+request_body_json:
+  filters:
+    created:
+      start: "{{ (now_utc() - duration('P' + (config['lookback_days']|string) + 'D')).strftime('%Y-%m-%dT%H:%M:%S+00:00') }}"
+```
+
+Capture les changements de statut sur la fenêtre vivante, manque les très vieux changements (acceptable car les statuts des factures > 90j ne bougent quasi plus).
+
+Les child streams (`invoice_details`, `invoice_custom_fields`, `invoice_payments`, etc.) bénéficient **automatiquement** de la restriction parent via `SubstreamPartitionRouter` → pas de logique supplémentaire.
+
+#### Streams couverts par le rolling window (7)
+
+| Stream | Filter API |
+|---|---|
+| `invoices` | `filters.created.start` ✅ |
+| `credit_notes` | `filters.created.start` ✅ |
+| `deliveries` | `filters.created.start` ✅ |
+| `orders` | `filters.created.start` ✅ |
+| `estimates` | `filters.created.start` ✅ |
+| `deposit_invoices` | `filters.created.start` ✅ |
+| `opportunities` | `filters.created.start` ✅ |
+
+#### Streams NON couverts (limitations Sellsy API)
+
+| Stream | Pourquoi |
+|---|---|
+| `subscriptions` | Le `SubscriptionFilters` n'expose **pas** de filtre temporel (uniquement `related_objects`) |
+| `payments` | Idem — seulement `status` + `related_objects` |
+| `progress_invoices` | Endpoint GET seulement, pas de `POST /search` ⇒ aucun filtre possible |
+
+→ Ces 3 streams resteront en Full Refresh. Volumes modérés, acceptable.
+
+#### Procédure d'activation manuelle
+
+**Étape 1 — Source config**
+- Airbyte UI → Sources → `sellsy-prod` → Edit
+- Champ **Lookback period (days)** : passer de `36500` à `90` (ou autre valeur)
+- Save
+
+**Étape 2 — Sync mode par stream**
+- Airbyte UI → Connections → ta connection → onglet Schema
+- Pour chacun des 7 streams listés ci-dessus :
+  - Sync mode : `Full Refresh | Overwrite` → `Incremental | Append + Deduped`
+  - Cursor field : `created`
+  - Primary key : `id` (normalement déjà set)
+- Save
+
+**Étape 3 — Sync now** : ne tire que les `lookback_days` derniers jours, déduplique sur l'`id`.
+
+#### Stratégie périodique recommandée
+
+| Fréquence | Action | Param |
+|---|---|---|
+| **Quotidien** | Sync rolling window 90j | `lookback_days=90`, mode Incremental Deduped |
+| **Mensuel** (1× / mois) | Backfill exhaustif | `lookback_days=36500` temporairement, mode Full Refresh Overwrite, puis ré-activer la 90j |
+
+Ça rattrape les changements lointains (custom field ajouté sur vieille facture, etc.) sans surcharger les syncs quotidiens.
+
+#### Caveat important
+
+Un custom field ajouté tard sur une vieille facture (> fenêtre rolling) ne sera plus capté en mode 90j. Le backfill mensuel résout ce problème.
 
 ### Phase 3 — Production sur VPS OVH
 

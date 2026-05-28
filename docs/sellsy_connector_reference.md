@@ -23,6 +23,7 @@
 14. [Modèle relationnel — jointures côté dbt](#14-modèle-relationnel--jointures-côté-dbt)
 15. [Bugs et workarounds rencontrés](#15-bugs-et-workarounds-rencontrés)
 16. [Workflow de modification](#16-workflow-de-modification)
+16bis. [Rolling window / incremental sync](#16bis-rolling-window--incremental-sync)
 17. [Limitations connues](#17-limitations-connues)
 18. [Glossaire Sellsy](#18-glossaire-sellsy)
 
@@ -714,6 +715,130 @@ from {{ source('raw', 'invoices') }} i
 ```
 
 Le `make airbyte-push` est idempotent : si le YAML local == le draft remote, il skip.
+
+---
+
+## 16bis. Rolling window / incremental sync
+
+### Architecture
+
+Machinerie en place mais **désactivée par défaut**. Le YAML expose un paramètre `lookback_days` dans le spec :
+
+```yaml
+spec:
+  connection_specification:
+    properties:
+      lookback_days:
+        type: integer
+        title: Lookback period (days)
+        default: 36500       # ≈ 100 ans = filtre inactif
+        minimum: 1
+```
+
+Le param est injecté dans le `request_body_json` des streams concernés via Jinja :
+
+```yaml
+request_body_json:
+  filters:
+    created:
+      start: "{{ (now_utc() - duration('P' + (config['lookback_days']|string) + 'D')).strftime('%Y-%m-%dT%H:%M:%S+00:00') }}"
+```
+
+### Format de date attendu par Sellsy
+
+ISO 8601 avec timezone : `YYYY-MM-DDTHH:MM:SS+ZZ:ZZ`. On utilise UTC :
+
+```
+2025-02-28T14:30:00+00:00
+```
+
+### Cursor field = `created`, PAS `updated`
+
+⚠️ Le schéma Sellsy `Invoice` v2 (et `CreditNote`, `Delivery`, `Order`, `Estimate`, `Opportunity`) n'a **pas** de champ `updated`. Conséquence directe : on ne peut pas détecter les changements de statut via un filtre "modified_since" — uniquement par re-fetch dans la fenêtre récente.
+
+C'est pour ça que la rolling window 90j fait sens : sur ces 90 jours, la plupart des changements de statut surviennent (draft → paid, paid → cancelled, etc.). Plus vieux que ça, les statuts ne bougent quasi plus.
+
+### Streams couverts par le rolling window (7)
+
+| Stream | Filter API utilisé |
+|---|---|
+| `invoices` | `filters.created.start` |
+| `credit_notes` | `filters.created.start` |
+| `deliveries` | `filters.created.start` |
+| `orders` | `filters.created.start` |
+| `estimates` | `filters.created.start` |
+| `deposit_invoices` | `filters.created.start` |
+| `opportunities` | `filters.created.start` |
+
+Les child streams associés (invoice_details, invoice_custom_fields, invoice_payments, etc.) bénéficient automatiquement de la restriction via `SubstreamPartitionRouter`. Pas de modif YAML supplémentaire.
+
+### Streams NON couverts (limitations API Sellsy)
+
+Vérifié dans l'OpenAPI :
+
+| Stream | Endpoint search | Filtres dispos |
+|---|---|---|
+| `subscriptions` | `POST /v2/subscriptions/search` | `related_objects` uniquement — **pas de date** |
+| `payments` | `POST /v2/payments/search` | `status` + `related_objects` — **pas de date** |
+| `progress_invoices` | **`GET /v2/progress-invoices`** | **Pas de search endpoint** — pas de filtre du tout |
+| `companies`, `individuals`, `contacts` | (référentiels) | Non pertinent — pas de notion de "fenêtre" |
+| Tous les référentiels (taxes, fiscal_years, etc.) | (statiques) | Non pertinent |
+
+→ Ces streams restent en Full Refresh à chaque sync. Volumes modérés, OK.
+
+### Procédure d'activation (manuelle dans l'UI Airbyte)
+
+#### Étape 1 — Mettre à jour le param dans la Source
+
+Airbyte UI → **Sources** → `sellsy-prod` → **Edit** :
+- **Lookback period (days)** : passer de `36500` à `90` (ou la valeur souhaitée)
+- **Save**
+
+#### Étape 2 — Changer le sync mode des 7 streams
+
+Airbyte UI → **Connections** → ta connection → onglet **Schema** :
+
+Pour chacun des 7 streams (invoices, credit_notes, deliveries, orders, estimates, deposit_invoices, opportunities) :
+
+| Champ | Avant | Après |
+|---|---|---|
+| Sync mode | `Full Refresh \| Overwrite` | `Incremental \| Append + Deduped` |
+| Cursor field | — | `created` |
+| Primary key | `id` (déjà set) | `id` |
+
+**Save**.
+
+#### Étape 3 — Sync now
+
+Le sync ne tire désormais que les `lookback_days` derniers jours et dédupliquera sur `id`. Les changements de statut sur la fenêtre récente écrasent les anciennes versions. L'historique > fenêtre reste figé dans Postgres.
+
+### Stratégie périodique recommandée
+
+| Fréquence | Action | Param `lookback_days` | Sync mode |
+|---|---|---|---|
+| **Quotidien** | Sync rolling window | `90` | Incremental Deduped |
+| **Mensuel** (1× / mois) | Backfill exhaustif | `36500` (temporaire) | Full Refresh Overwrite |
+
+Le backfill mensuel rattrape les éventuels custom fields / changements ajoutés sur de vieilles factures hors fenêtre.
+
+### Pourquoi ne PAS activer le rolling window dès le 1er sync ?
+
+Le premier sync doit être un **backfill exhaustif** (Full Refresh, lookback inactif) pour avoir tout l'historique en Postgres. Si on active le rolling window 90j dès le départ :
+- Le sync wipe les tables (mode Overwrite)
+- Ne réinsère que 90j de données
+- **Tu perds 95% de ton historique**
+
+D'où le default `lookback_days=36500` et le sync_mode `Overwrite` au démarrage, puis bascule manuelle après le backfill initial.
+
+### Bug & quirks notés sur la machinerie
+
+| # | Item | Note |
+|---|---|---|
+| 1 | `now_utc()` Jinja macro | Disponible nativement dans le low-code CDK Airbyte. Retourne datetime UTC. |
+| 2 | `duration('P90D')` | Format ISO 8601 duration. Le `P` (period) est obligatoire. |
+| 3 | `strftime('%Y-%m-%dT%H:%M:%S+00:00')` | Force le format avec timezone +00:00. Sellsy accepte aussi `Z` mais on reste explicit. |
+| 4 | Param `lookback_days` int | Cast en string avec `\|string` pour la concaténation Jinja avec 'P' + ... + 'D' |
+| 5 | Default 36500 vs valeur d'activation 90 | Permet de garder le manifest valide en dev / staging avec full refresh, sans toucher au YAML |
 
 ---
 
