@@ -780,9 +780,15 @@ Vérifié dans l'OpenAPI :
 |---|---|---|
 | `subscriptions` | `POST /v2/subscriptions/search` | `related_objects` uniquement — **pas de date** |
 | `payments` | `POST /v2/payments/search` | `status` + `related_objects` — **pas de date** |
-| `progress_invoices` | **`GET /v2/progress-invoices`** | **Pas de search endpoint** — pas de filtre du tout |
 | `companies`, `individuals`, `contacts` | (référentiels) | Non pertinent — pas de notion de "fenêtre" |
 | Tous les référentiels (taxes, fiscal_years, etc.) | (statiques) | Non pertinent |
+
+### Streams retirés (non extractibles via Sellsy V2)
+
+| Stream | Raison |
+|---|---|
+| `progress_invoices` | Sellsy V2 expose uniquement `POST /v2/progress-invoices` (création), `POST /v2/progress-invoices/compute` et `PUT /v2/progress-invoices/{id}` (update). **Aucun GET ni search** ⇒ pas de moyen d'extraire les factures de situation existantes. Si besoin métier émerge, à investiguer via le shim v1 (`Document.getOne doctype=progress_invoice`). |
+| `proformas` | Idem — quasiment rien en v2, seul `/proforma-invoices/{id}/custom-fields` existe. Drop intentionnel (2% des invoices). |
 
 → Ces streams restent en Full Refresh à chaque sync. Volumes modérés, OK.
 
