@@ -208,6 +208,46 @@ def main() -> None:
     dirty = " +dirty" if git_is_dirty() else ""
     description = f"Synced from Git ({git_sha}{dirty})"
 
+    # ──────────────────────────────────────────────────────────────────────
+    # Merge schémas auto-importés depuis le draft remote
+    # ──────────────────────────────────────────────────────────────────────
+    # Quand un stream est testé dans le Builder UI avec autoImportSchema=true,
+    # Airbyte régénère schema_loader.schema.properties avec les vrais champs
+    # de la réponse API. Sans cette logique de merge, notre push écraserait
+    # ces schémas enrichis avec ceux (minimaux) du YAML local.
+    #
+    # Règle : pour chaque stream, si le remote a un schema_loader avec STRICTEMENT
+    # plus de propriétés que le local, on préserve le remote.
+    remote_streams = {
+        s.get("name"): s
+        for s in (remote_manifest or {}).get("streams", [])
+        if s.get("name")
+    }
+    preserved = []
+    for stream in manifest.get("streams", []):
+        name = stream.get("name")
+        if not name or name not in remote_streams:
+            continue
+        local_props = (
+            stream.get("schema_loader", {})
+                  .get("schema", {})
+                  .get("properties", {})
+        )
+        remote_props = (
+            remote_streams[name]
+                .get("schema_loader", {})
+                .get("schema", {})
+                .get("properties", {})
+        )
+        if len(remote_props) > len(local_props):
+            stream["schema_loader"] = remote_streams[name]["schema_loader"]
+            preserved.append(f"{name} ({len(local_props)}→{len(remote_props)} props)")
+
+    if preserved:
+        print(f"→ Preserving {len(preserved)} enriched schemas from remote:")
+        for p in preserved:
+            print(f"    • {p}")
+
     print("→ Updating draft manifest in the Builder…")
     api_post(
         token,
