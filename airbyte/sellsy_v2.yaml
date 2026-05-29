@@ -908,6 +908,14 @@ streams:
       additionalProperties: true
 - name: companies
   type: DeclarativeStream
+  # POC INCREMENTAL — version minimaliste statique (pas de Jinja, pas de MinMaxDatetime)
+  # Si la validation passe, on aura confirmé que DatetimeBasedCursor lui-même est OK.
+  # Étape suivante : ajouter start_time_option pour injecter le filtre dans la requête.
+  incremental_sync:
+    type: DatetimeBasedCursor
+    cursor_field: created
+    datetime_format: "%Y-%m-%dT%H:%M:%S%z"
+    start_datetime: "2010-01-01T00:00:00+0000"
   retriever:
     type: SimpleRetriever
     paginator:
