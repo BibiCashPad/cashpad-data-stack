@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./scripts/airbyte_check_sync.sh)",
+      "Bash(scripts/airbyte_check_sync.sh)",
+      "Bash(/Users/guillaumebiet/Documents/00_CASHPAD/00_GIT/cashpad-data-stack/scripts/airbyte_check_sync.sh)",
+      "Bash(make airbyte-status)",
+      "Bash(make airbyte-pull)",
+      "Bash(make ps)",
+      "Bash(make logs)",
+      "Bash(docker logs *)",
+      "Bash(docker compose logs *)",
+      "Bash(kubectl get pods *)",
+      "Bash(kubectl get *)",
+      "Bash(kubectl logs *)",
+      "Bash(kubectl describe *)"
+    ]
+  }
+}

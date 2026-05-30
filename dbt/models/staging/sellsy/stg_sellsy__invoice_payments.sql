@@ -1,29 +1,58 @@
 {{ config(materialized='view') }}
 
 -- ──────────────────────────────────────────────────────────────────────────
--- Staging : paiements liés aux factures Sellsy V2
+-- Staging : mapping paiements ↔ factures Sellsy
 --
--- ⚠️ Limitation actuelle : Airbyte n'a typé que `id` et `invoice_id` dans la
--- table raw (le stream invoice_custom_fields a un schéma minimaliste).
+-- Source : stg_sellsy__payments (qui lit raw.payments).
+-- On unnest payments.related_objects[] et on filtre type='invoice' pour
+-- obtenir le mapping invoice_id ↔ payment_id.
 --
--- Les autres champs (status, amount, paid_at) ne sont pas accessibles ici.
--- Pour le MVP, on se contente de l'existence d'un paiement pour détecter
--- les factures "réglées" (par count > 0 sur invoice_id).
+-- Avant le 2026-05-30 ce staging lisait raw.invoice_payments (stream
+-- N+1 qui faisait 50k calls par sync). Le stream a été supprimé après
+-- audit des doublons : payments.related_objects[] contient déjà tout
+-- ce qu'on a besoin (id du doc lié, montant, date du lien).
 --
--- TODO : enrichir le YAML du connecteur pour typer status/amount/paid_at,
--- relancer un sync, et compléter ce staging.
+-- Bonus vs ancien staging : on expose maintenant le montant alloué au
+-- doc lié, la date d'allocation, et le statut du paiement. Le mart
+-- fct_invoices pourra agréger plus finement (paiements confirmés vs
+-- en attente, dernier paiement reçu, etc.).
 -- ──────────────────────────────────────────────────────────────────────────
 
-with source as (
-    select * from {{ source('sellsy', 'invoice_payments') }}
+with payments as (
+    select * from {{ ref('stg_sellsy__payments') }}
 ),
 
-renamed as (
+links as (
     select
-        id::bigint                                          as payment_id,
-        invoice_id::bigint                                  as invoice_id,
-        _airbyte_extracted_at                               as ingested_at
-    from source
+        p.payment_id,
+        p.payment_status,
+        p.paid_at,
+        p.currency,
+
+        -- Unnest related_objects[]
+        (link.value ->> 'id')::bigint               as linked_doc_id,
+        link.value ->> 'type'                       as linked_doc_type,
+        (link.value ->> 'amount_linked')::numeric   as amount_linked,
+        (link.value ->> 'linked_date')::date        as linked_date,
+
+        p.ingested_at
+    from payments p
+    cross join lateral jsonb_array_elements(p.related_objects) as link(value)
+    where p.related_objects is not null
+),
+
+invoice_payments as (
+    select
+        payment_id,
+        linked_doc_id      as invoice_id,
+        amount_linked,
+        linked_date,
+        paid_at,
+        payment_status,
+        currency,
+        ingested_at
+    from links
+    where linked_doc_type = 'invoice'
 )
 
-select * from renamed
+select * from invoice_payments

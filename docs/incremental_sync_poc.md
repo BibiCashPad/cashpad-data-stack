@@ -1,5 +1,10 @@
 # POC : incremental sync sur Sellsy
 
+> **Statut : POC validé le 2026-05-30.** La doctrine finale, appliquée au
+> manifest et à dbt, est consolidée dans `docs/incremental_sync_strategy.md`.
+> Ce document reste comme **historique** du POC et de ses 4 étapes — utile
+> si on doit ré-investiguer un comportement Pydantic/Jinja.
+>
 > Branche `feat/incremental` — préparation pour réessayer `DatetimeBasedCursor`
 > après l'échec du Sprint 7 (rejet silencieux "An unknown error has occurred").
 
