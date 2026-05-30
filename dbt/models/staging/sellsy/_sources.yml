@@ -44,20 +44,21 @@ sources:
       - name: individuals
       - name: contacts
 
-      # Custom fields & smart tags (child streams paginés)
-      - name: invoice_custom_fields
-      - name: credit_note_custom_fields
-      - name: order_custom_fields
-      - name: invoice_payments
-      - name: company_smart_tags
-      - name: company_custom_fields
-      - name: individual_smart_tags
-      - name: individual_custom_fields
+      # Paiements (top-level search) — source unique des paiements, on extrait
+      # le mapping invoice→payment depuis payments.related_objects[]
+      # (cf. stg_sellsy__invoice_payments). Évite 50k calls N+1 vs stream
+      # invoice_payments supprimé.
+      - name: payments
+        description: "Paiements (POST /v2/payments/search)"
 
-      # Parents v1 (résolution workflow)
-      - name: delivery_parents
-      - name: order_parents
-      - name: invoice_model_parents
+      # Custom fields : SUPPRIMÉS (2026-05-30). Tous les CFs sont maintenant
+      # récupérés via embed[]=cf.X sur les URLs parents (companies, invoices,
+      # credit_notes, orders, deliveries, estimates, deposit_invoices,
+      # opportunities). 21 CFs Cashpad cartographiés, ~70k calls API/sync
+      # économisés. Les valeurs des CFs sont dans <parent>._embed.custom_fields[].
+      # Voir stg_sellsy__custom_fields_values.sql pour l'unnest générique.
+      # company_smart_tags également supprimé (companies._embed.smart_tags
+      # via embed=smart_tags sur le parent).
 
       # Référentiels
       - name: custom_fields_definitions

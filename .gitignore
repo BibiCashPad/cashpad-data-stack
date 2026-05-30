@@ -16,3 +16,7 @@ dagster/dagster_home/*
 !dagster/dagster_home/dagster.yaml
 dagster/**/__pycache__/
 dagster/**/*.pyc
+
+# Claude Code — garde settings.json (project, partagé), ignore le reste
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
